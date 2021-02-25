@@ -183,3 +183,41 @@ function pmpro_events_tribe_events_requires_membership_columns_content( $column_
 }
 add_filter( 'manage_tribe_events_posts_columns', 'pmpro_events_tribe_events_requires_membership_columns_head' );
 add_action( 'manage_tribe_events_posts_custom_column', 'pmpro_events_tribe_events_requires_membership_columns_content', 10, 2 );
+
+/**
+ * Carry over membership restrictions to recurring events.
+ * @since 1.1
+ */
+function pmpro_events_tribe_events_recurring_events_memberships( $post_id, $parent_id) {
+	global $wpdb;
+
+	// Not a recurring event, just bail.
+	if ( empty ( $parent_id ) && function_exists( 'tribe_is_recurring_event' ) && ! tribe_is_recurring_event( $post_id ) ) {
+		return;
+	}
+	
+	$SQL = $wpdb->prepare( "SELECT membership_id FROM $wpdb->pmpro_memberships_pages WHERE page_id = %d", intval( $parent_id ) );
+	$levels = $wpdb->get_results( $SQL );
+
+	if ( empty( $levels ) ) {
+		return;
+	}
+
+	// Clean up database if existing levels are created etc.
+	$DELETE = $wpdb->prepare( "DELETE FROM $wpdb->pmpro_memberships_pages WHERE page_id = %d", intval( $post_id ) );
+	$wpdb->query( $DELETE );
+
+	$inserts = array();
+	foreach( $levels as $level ) {
+		$inserts[] = $wpdb->prepare(
+			"('%s', '%s')",
+			intval( $level->membership_id ),
+			intval( $post_id )
+		);
+	}
+
+	$inserts_sql = "INSERT INTO {$wpdb->pmpro_memberships_pages} (membership_id, page_id) VALUES " . implode( ',', $inserts );
+	$wpdb->query( $inserts_sql );
+	
+}
+add_action( 'tribe_events_pro_recurring_event_instance_inserted', 'pmpro_events_tribe_events_recurring_events_memberships', 20, 3 );
